@@ -1,0 +1,119 @@
+{
+  "abc": {
+    "subject_label": [
+      "soil"
+    ],
+    "keyword_matcher_output": [
+      "soil"
+    ],
+    "concept_label": [
+      "soil"
+    ],
+    "new_keywords": [
+      "erosion ratio"
+    ],
+    "new_keyword_uris": [
+      "https://example.org/x"
+    ]
+  },
+  "https://doi.org/10.1046/j.1469-8137.1997.00682.x": {
+    "subject_label": [],
+    "keyword_matcher_output": [],
+    "concept_label": [
+      "root biomass",
+      "plant nutrient uptake",
+      "soil mineralization",
+      "soil nutrient availability",
+      "plant available water capacity",
+      "plant water uptake",
+      "normal water loss (of plants)",
+      "root growth",
+      "plant available water content",
+      "soil biological processes",
+      "phosphorus retention",
+      "phosphorus",
+      "soil fluid movement",
+      "soil nutrient content",
+      "soil depth rootable",
+      "soil phosphorus loss",
+      "soil moisture movement",
+      "soil volume change",
+      "soil water movement",
+      "antecedent soil moisture content",
+      "mineral concentration",
+      "soil structural change",
+      "soil water availability",
+      "soil moisture contents",
+      "soil moisture",
+      "soil water",
+      "soil",
+      "biomass",
+      "roots",
+      "nitrogen",
+      "potassium",
+      "soil moisture content",
+      "crop"
+    ],
+    "new_keywords": [],
+    "new_keyword_uris": []
+  },
+  "https://data.isric.org/geonetwork/srv/fre/catalog.search#/metadata/a36f7919-0d6e-4044-902c-64a74feade6b": {
+    "subject_label": [],
+    "keyword_matcher_output": [],
+    "concept_label": [
+      "soil nutrient content",
+      "soil nutrients",
+      "soil nutrient availability",
+      "cations sum",
+      "soil depth sampled",
+      "gradient",
+      "soil nutrient",
+      "soil",
+      "aluminium",
+      "aluminium extractable element",
+      "soil depth",
+      "soil spatial properties"
+    ],
+    "new_keywords": [],
+    "new_keyword_uris": []
+  },
+  "d4608f62-da32-4ee6-b432-386c01871ee1": {
+    "subject_label": [],
+    "keyword_matcher_output": [],
+    "concept_label": [
+      "soil function indicator",
+      "soil quality",
+      "soil indicator",
+      "soil physical quality",
+      "soil environmental function",
+      "soil management",
+      "soil function",
+      "soil chemical properties",
+      "soil type",
+      "land use",
+      "soil classification"
+    ],
+    "new_keywords": [],
+    "new_keyword_uris": [
+      "test",
+      "raw",
+      "wronf"
+    ]
+  },
+  "10.5281/zenodo.12583774": {
+    "subject_label": [
+      "04 agricultural and veterinary sciences",
+      "0401 agriculture, forestry, and fisheries"
+    ],
+    "keyword_matcher_output": [],
+    "concept_label": [
+      "soil quality",
+      "soil agricultural function",
+      "soil",
+      "soil management",
+      "soil indicators"
+    ],
+    "new_keywords": [],
+    "new_keyword_uris": []
+  }
+}
