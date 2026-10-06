@@ -1,6 +1,9 @@
 # Local data generated from the review workbook and reviewer decisions.
-data/*.csv
-data/*.ttl
+# Keep the public files tracked, but ignore the generated local data.
+data/*
+!data/keyword_extraction_review.csv
+!data/SoilVoc.ttl
+
 
 # Python and Streamlit runtime files.
 __pycache__/
