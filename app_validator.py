@@ -22,7 +22,7 @@ import streamlit as st
 
 
 APP_DIR = Path(__file__).parent
-SOURCE_FILE = APP_DIR / "keyword_extraction_review.xlsx"
+SOURCE_FILE = APP_DIR / "data"/ "keyword_extraction_review.xlsx"
 LOCAL_SOURCE_FILE = APP_DIR / "data" / "keyword_extraction_review.csv"
 VALIDATIONS_FILE = APP_DIR / "data" / "keyword_validations.json"
 SOILVOC_FILE = APP_DIR / "data" / "SoilVoc.ttl"
