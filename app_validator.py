@@ -486,7 +486,7 @@ def main() -> None:
         st.markdown("**Abstract**")
         st.write(str(record["abstract"]))
 
-    st.subheader("Keyword review")
+    st.subheader("Automated results review")
     st.caption("Remove an entry from a list to exclude it from the validated result.")
     saved_keywords = validations.get(record_id, {})
     kept_keywords: dict[str, list[str]] = {}
@@ -504,6 +504,7 @@ def main() -> None:
                 key=f"keywords_{source_column}_{record_id}",
             )
 
+    st.subheader("Adding missing keywords")
     soilvoc_keywords = load_soilvoc_keywords()
     with st.container(border=True):
         if soilvoc_keywords:
