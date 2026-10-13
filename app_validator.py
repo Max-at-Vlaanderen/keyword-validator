@@ -59,6 +59,7 @@ EXAMPLE_REQUIRED_EXISTING_KEYWORDS = {
     "concept_label": ["relevant extracted concept"],
 }
 EXAMPLE_REQUIRED_NEW_KEYWORD = "erosion ratio"
+SOILVOC_EXCLUDED_LABEL_PATTERN = re.compile(r"\bprocedures?\b", re.IGNORECASE)
 
 
 def split_keywords(value: Any) -> list[str]:
@@ -190,6 +191,11 @@ def soilvoc_labels(turtle_data: bytes) -> list[str]:
         for label in graph.objects(predicate=predicate)
         if isinstance(label, Literal) and str(label).strip()
     }
+    labels = {
+        label
+        for label in labels
+        if not SOILVOC_EXCLUDED_LABEL_PATTERN.search(label)
+    }
     if not labels:
         raise ValueError("The downloaded SoilVoc file contains no concept labels.")
     return sorted(labels, key=str.casefold)
@@ -222,6 +228,9 @@ def load_soilvoc_keywords() -> list[str]:
             if "keyword" in csv_data.columns:
                 keywords = csv_data["keyword"].dropna().astype(str).str.strip()
                 keywords = keywords[keywords != ""]
+                keywords = keywords[
+                    ~keywords.str.contains(SOILVOC_EXCLUDED_LABEL_PATTERN, regex=True)
+                ]
                 if not keywords.empty:
                     return keywords.tolist()
         except (OSError, ValueError, pd.errors.EmptyDataError):
