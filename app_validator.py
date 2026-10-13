@@ -217,7 +217,27 @@ def ingest_soilvoc() -> int:
 def load_soilvoc_keywords() -> list[str]:
     """Load locally indexed SoilVoc labels for adding new keywords."""
     if SOILVOC_KEYWORDS_FILE.exists():
-        return pd.read_csv(SOILVOC_KEYWORDS_FILE)["keyword"].dropna().tolist()
+        try:
+            csv_data = pd.read_csv(SOILVOC_KEYWORDS_FILE)
+            if "keyword" in csv_data.columns:
+                keywords = csv_data["keyword"].dropna().astype(str).str.strip()
+                keywords = keywords[keywords != ""]
+                if not keywords.empty:
+                    return keywords.tolist()
+        except (OSError, ValueError, pd.errors.EmptyDataError):
+            pass
+
+    # Fallback for repositories that include SoilVoc.ttl without a prebuilt CSV index.
+    if SOILVOC_FILE.exists():
+        try:
+            labels = soilvoc_labels(SOILVOC_FILE.read_bytes())
+        except (OSError, ValueError):
+            return []
+
+        SOILVOC_KEYWORDS_FILE.parent.mkdir(parents=True, exist_ok=True)
+        pd.DataFrame({"keyword": labels}).to_csv(SOILVOC_KEYWORDS_FILE, index=False)
+        return labels
+
     return []
 
 
