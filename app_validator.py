@@ -30,9 +30,15 @@ SOILVOC_FILE = APP_DIR / "data" / "SoilVoc.ttl"
 SOILVOC_KEYWORDS_FILE = APP_DIR / "data" / "soilvoc_keywords.csv"
 SOILVOC_URL = "https://raw.githubusercontent.com/soilwise-he/soil-vocabs/refs/heads/main/SoilVoc.ttl"
 EUSOILVOC_PREFIX = "https://w3id.org/eusoilvoc#"
-SOURCE_SHEET = "result"
+SOURCE_SHEET_PREFIX = "keyllm"
+RESULTS_SOURCE_SHEET = "result"
 FIXED_COLUMNS = ("record_identifier", "title", "abstract")
 KEYWORD_COLUMNS = ("subject_label", "keyword_matcher_output", "concept_label")
+KEYWORD_SOURCE_COLUMN = "keywords_source"
+KEYWORD_SOURCES_FIELD = "keyword_sources"
+KEYWORD_MATCHER_SOURCE = "keyword_matcher"
+DELETED_KEYWORDS_FIELD = "deleted_keywords"
+UNKNOWN_KEYWORD_SOURCE = "unknown_source"
 VALIDATION_COLUMNS = KEYWORD_COLUMNS + ("new_keywords", "new_keyword_uris")
 REMARKS_COLUMN = "general_remarks"
 LEGACY_REMARKS_COLUMN = "General_remarks"
@@ -140,13 +146,31 @@ def example_review_is_complete(kept_keywords: dict[str, list[str]]) -> bool:
     )
 
 
-def validate_source(data: pd.DataFrame) -> pd.DataFrame:
-    """Confirm that the source data has the columns required by the review UI."""
-    required_columns = set(FIXED_COLUMNS + KEYWORD_COLUMNS)
+def validate_source(
+    data: pd.DataFrame,
+    *,
+    require_all_keyword_columns: bool = True,
+    require_keyword_source_column: bool = False,
+) -> pd.DataFrame:
+    """Confirm that source data has the columns required by the review UI."""
+    required_columns = set(FIXED_COLUMNS)
+    if require_all_keyword_columns:
+        required_columns.update(KEYWORD_COLUMNS)
+    if require_keyword_source_column:
+        required_columns.add(KEYWORD_SOURCE_COLUMN)
     missing_columns = required_columns.difference(data.columns)
     if missing_columns:
         missing = ", ".join(sorted(missing_columns))
         raise ValueError(f"The source data is missing required columns: {missing}")
+
+    if not require_all_keyword_columns:
+        for column in KEYWORD_COLUMNS:
+            if column not in data.columns:
+                data[column] = ""
+
+    if KEYWORD_SOURCE_COLUMN not in data.columns:
+        data[KEYWORD_SOURCE_COLUMN] = ""
+
     return data
 
 
@@ -166,41 +190,287 @@ def aggregate_records(data: pd.DataFrame) -> pd.DataFrame:
             "record_identifier": record_identifier,
             "title": first_present_value(record_rows["title"]),
             "abstract": first_present_value(record_rows["abstract"]),
+            KEYWORD_SOURCES_FIELD: {column: {} for column in KEYWORD_COLUMNS},
         }
+
+        keywords_by_column: dict[str, list[str]] = {column: [] for column in KEYWORD_COLUMNS}
+        keyword_sources_by_column: dict[str, dict[str, list[str]]] = {
+            column: {} for column in KEYWORD_COLUMNS
+        }
+
+        for _, row in record_rows.iterrows():
+            row_keyword_sources = split_keywords(row.get(KEYWORD_SOURCE_COLUMN, ""))
+
+            for column in KEYWORD_COLUMNS:
+                row_keywords = normalize_keyword_list_for_column(column, split_keywords(row[column]))
+                keywords_by_column[column].extend(row_keywords)
+
+                if column == "keyword_matcher_output":
+                    for keyword in row_keywords:
+                        source_list = keyword_sources_by_column[column].setdefault(keyword, [])
+                        if KEYWORD_MATCHER_SOURCE not in source_list:
+                            source_list.append(KEYWORD_MATCHER_SOURCE)
+                    continue
+
+                if not row_keywords:
+                    continue
+
+                if len(row_keyword_sources) == len(row_keywords):
+                    keyword_source_pairs = zip(row_keywords, row_keyword_sources)
+                elif len(row_keyword_sources) == 1:
+                    keyword_source_pairs = (
+                        (keyword, row_keyword_sources[0]) for keyword in row_keywords
+                    )
+                else:
+                    keyword_source_pairs = ((keyword, "") for keyword in row_keywords)
+
+                for keyword, source in keyword_source_pairs:
+                    cleaned_source = str(source).strip()
+                    if not cleaned_source:
+                        continue
+                    source_list = keyword_sources_by_column[column].setdefault(keyword, [])
+                    if cleaned_source not in source_list:
+                        source_list.append(cleaned_source)
+
         for column in KEYWORD_COLUMNS:
-            keywords: list[str] = []
-            for value in record_rows[column]:
-                keywords.extend(split_keywords(value))
-            aggregated_record[column] = normalize_keyword_list_for_column(column, keywords)
+            unique_keywords = normalize_keyword_list_for_column(column, keywords_by_column[column])
+            aggregated_record[column] = unique_keywords
+            source_to_keywords: dict[str, list[str]] = {}
+            for keyword in unique_keywords:
+                for source in keyword_sources_by_column[column].get(keyword, []):
+                    source_to_keywords.setdefault(source, []).append(keyword)
+            aggregated_record[KEYWORD_SOURCES_FIELD][column] = {
+                source: list(dict.fromkeys(keywords))
+                for source, keywords in source_to_keywords.items()
+            }
+
         aggregated_rows.append(aggregated_record)
 
-    return pd.DataFrame(aggregated_rows, columns=FIXED_COLUMNS + KEYWORD_COLUMNS)
+    return pd.DataFrame(
+        aggregated_rows,
+        columns=FIXED_COLUMNS + KEYWORD_COLUMNS + (KEYWORD_SOURCES_FIELD,),
+    )
+
+
+def parse_keyword_sources(value: Any) -> dict[str, dict[str, list[str]]]:
+    """Parse stored keyword source metadata as source-grouped keywords."""
+    if isinstance(value, dict):
+        raw_value = value
+    elif pd.isna(value):
+        return {column: {} for column in KEYWORD_COLUMNS}
+    else:
+        text = str(value).strip()
+        if not text:
+            return {column: {} for column in KEYWORD_COLUMNS}
+        try:
+            raw_value = json.loads(text)
+        except json.JSONDecodeError:
+            try:
+                raw_value = ast.literal_eval(text)
+            except (ValueError, SyntaxError):
+                return {column: {} for column in KEYWORD_COLUMNS}
+
+    if not isinstance(raw_value, dict):
+        return {column: {} for column in KEYWORD_COLUMNS}
+
+    parsed: dict[str, dict[str, list[str]]] = {column: {} for column in KEYWORD_COLUMNS}
+    for column in KEYWORD_COLUMNS:
+        source_map = raw_value.get(column, {})
+        if not isinstance(source_map, dict):
+            continue
+        for source, keywords in source_map.items():
+            if not str(source).strip():
+                continue
+            normalized_keywords = normalize_keyword_list_for_column(
+                column,
+                keywords if isinstance(keywords, list) else [keywords],
+            )
+            if normalized_keywords:
+                parsed[column][str(source).strip()] = normalized_keywords
+    return parsed
+
+
+def selected_keyword_sources_for_record(
+    record: pd.Series,
+    kept_keywords: dict[str, list[str]],
+) -> dict[str, dict[str, list[str]]]:
+    """Return keyword-source metadata for all suggested keywords in a record."""
+    del kept_keywords
+    record_keyword_sources = parse_keyword_sources(record.get(KEYWORD_SOURCES_FIELD, {}))
+    selected_sources: dict[str, dict[str, list[str]]] = {}
+
+    for column in KEYWORD_COLUMNS:
+        selected_sources[column] = {}
+        available_keywords = normalize_keyword_list_for_column(
+            column,
+            split_keywords(record[column]),
+        )
+        available_set = set(available_keywords)
+
+        if column == "keyword_matcher_output":
+            if available_keywords:
+                selected_sources[column][KEYWORD_MATCHER_SOURCE] = available_keywords
+            continue
+
+        for source, source_keywords in record_keyword_sources.get(column, {}).items():
+            matched_keywords = [
+                keyword for keyword in source_keywords if keyword in available_set
+            ]
+            if matched_keywords:
+                selected_sources[column][source] = list(dict.fromkeys(matched_keywords))
+
+    return selected_sources
+
+
+def deleted_keywords_for_record(
+    record: pd.Series,
+    kept_keywords: dict[str, list[str]],
+    keyword_sources: dict[str, dict[str, list[str]]],
+) -> dict[str, dict[str, list[str]]]:
+    """Capture removed keywords grouped by their source."""
+    deleted: dict[str, dict[str, list[str]]] = {}
+    for column in KEYWORD_COLUMNS:
+        available_keywords = normalize_keyword_list_for_column(
+            column,
+            split_keywords(record[column]),
+        )
+        selected_keywords = set(
+            normalize_keyword_list_for_column(column, kept_keywords.get(column, []))
+        )
+        deleted_keywords = [
+            keyword for keyword in available_keywords if keyword not in selected_keywords
+        ]
+        deleted[column] = {}
+        deleted_set = set(deleted_keywords)
+        sourced_deleted: set[str] = set()
+
+        for source, source_keywords in keyword_sources.get(column, {}).items():
+            matches = [keyword for keyword in source_keywords if keyword in deleted_set]
+            if matches:
+                deleted[column][source] = list(dict.fromkeys(matches))
+                sourced_deleted.update(matches)
+
+        unsourced_deleted = [
+            keyword for keyword in deleted_keywords if keyword not in sourced_deleted
+        ]
+        if unsourced_deleted:
+            deleted[column][UNKNOWN_KEYWORD_SOURCE] = unsourced_deleted
+
+        for source in list(deleted[column].keys()):
+            deleted[column][source] = list(dict.fromkeys(deleted[column][source]))
+
+    return deleted
+
+
+def parse_deleted_keywords(value: Any) -> dict[str, dict[str, list[str]]]:
+    """Parse deleted_keywords as source-grouped keywords."""
+    if isinstance(value, dict):
+        raw_value = value
+    elif pd.isna(value):
+        return {column: {} for column in KEYWORD_COLUMNS}
+    else:
+        text = str(value).strip()
+        if not text:
+            return {column: {} for column in KEYWORD_COLUMNS}
+        try:
+            raw_value = json.loads(text)
+        except json.JSONDecodeError:
+            try:
+                raw_value = ast.literal_eval(text)
+            except (ValueError, SyntaxError):
+                return {column: {} for column in KEYWORD_COLUMNS}
+
+    if not isinstance(raw_value, dict):
+        return {column: {} for column in KEYWORD_COLUMNS}
+
+    parsed: dict[str, dict[str, list[str]]] = {column: {} for column in KEYWORD_COLUMNS}
+    for column in KEYWORD_COLUMNS:
+        column_value = raw_value.get(column, {})
+        if isinstance(column_value, dict):
+            for source, keywords in column_value.items():
+                parsed[column][str(source)] = normalize_keyword_list_for_column(
+                    column,
+                    keywords if isinstance(keywords, list) else [keywords],
+                )
+
+    return parsed
+
+
+def load_workbook_records(workbook: Path | BytesIO) -> pd.DataFrame:
+    """Load and combine all keyllm* sheets from an Excel workbook."""
+    excel_file = pd.ExcelFile(workbook)
+    source_sheets = [
+        sheet_name
+        for sheet_name in excel_file.sheet_names
+        if sheet_name.casefold().startswith(SOURCE_SHEET_PREFIX)
+    ]
+
+    if RESULTS_SOURCE_SHEET in excel_file.sheet_names:
+        source_sheets.append(RESULTS_SOURCE_SHEET)
+
+    source_sheets = list(dict.fromkeys(source_sheets))
+
+    if not source_sheets:
+        raise ValueError(
+            "The source workbook must contain at least one sheet whose name starts "
+            f"with '{SOURCE_SHEET_PREFIX}' (or the general '{RESULTS_SOURCE_SHEET}' sheet)."
+        )
+
+    sheet_data = pd.read_excel(excel_file, sheet_name=source_sheets)
+    frames: list[pd.DataFrame] = []
+    for sheet_name in source_sheets:
+        require_all_keyword_columns = sheet_name == RESULTS_SOURCE_SHEET
+        try:
+            frames.append(
+                validate_source(
+                    sheet_data[sheet_name],
+                    require_all_keyword_columns=require_all_keyword_columns,
+                    require_keyword_source_column=True,
+                )
+            )
+        except ValueError as error:
+            raise ValueError(f"Sheet '{sheet_name}' is invalid: {error}") from error
+
+
+    return aggregate_records(pd.concat(frames, ignore_index=True))
+
+
+@st.cache_data(show_spinner=False)
+def load_workbook_records_cached(source_file_mtime_ns: int) -> pd.DataFrame:
+    """Cache workbook parsing across reruns until the source file changes."""
+    del source_file_mtime_ns
+    return load_workbook_records(SOURCE_FILE)
 
 
 def load_source() -> pd.DataFrame:
-    """Prefer the Excel source, then retain a local CSV copy for future sessions."""
+    """Prefer the Excel source and refresh the local CSV copy only when needed."""
     if SOURCE_FILE.exists():
-        data = pd.read_excel(SOURCE_FILE, sheet_name=SOURCE_SHEET)
+        source_mtime_ns = SOURCE_FILE.stat().st_mtime_ns
+        records = load_workbook_records_cached(source_mtime_ns)
+
+        should_refresh_csv = True
+        if LOCAL_SOURCE_FILE.exists():
+            csv_mtime_ns = LOCAL_SOURCE_FILE.stat().st_mtime_ns
+            should_refresh_csv = csv_mtime_ns < source_mtime_ns
+
+        if should_refresh_csv:
+            LOCAL_SOURCE_FILE.parent.mkdir(parents=True, exist_ok=True)
+            records.to_csv(LOCAL_SOURCE_FILE, index=False)
     elif LOCAL_SOURCE_FILE.exists():
-        data = pd.read_csv(LOCAL_SOURCE_FILE)
+        records = validate_source(pd.read_csv(LOCAL_SOURCE_FILE))
     else:
         raise FileNotFoundError(
             "Add keyword_extraction_review.xlsx beside this app, or add "
             "data/keyword_extraction_review.csv."
         )
 
-    records = aggregate_records(validate_source(data))
-    LOCAL_SOURCE_FILE.parent.mkdir(parents=True, exist_ok=True)
-    records.to_csv(LOCAL_SOURCE_FILE, index=False)
     return records
 
 
 def import_source(uploaded_file: Any) -> int:
     """Validate and save an administrator-uploaded workbook and its CSV copy."""
     workbook = uploaded_file.getvalue()
-    records = aggregate_records(
-        validate_source(pd.read_excel(BytesIO(workbook), sheet_name=SOURCE_SHEET))
-    )
+    records = load_workbook_records(BytesIO(workbook))
     SOURCE_FILE.write_bytes(workbook)
     LOCAL_SOURCE_FILE.parent.mkdir(parents=True, exist_ok=True)
     records.to_csv(LOCAL_SOURCE_FILE, index=False)
@@ -438,7 +708,10 @@ def render_admin_import() -> None:
         uploaded_file = st.file_uploader(
             "Replace source workbook",
             type=["xlsx"],
-            help="The workbook must contain the 'result' sheet and the required columns.",
+            help=(
+                "The workbook must contain at least one sheet starting with 'keyllm' "
+                "(or the legacy 'result' sheet) and the required columns."
+            ),
         )
         if uploaded_file and st.button("Import workbook", type="primary"):
             try:
@@ -475,6 +748,12 @@ def load_validations() -> dict[str, dict[str, Any]]:
             loaded_record[REMARKS_COLUMN] = str(
                 record_data.get(REMARKS_COLUMN, record_data.get(LEGACY_REMARKS_COLUMN, ""))
             )
+            loaded_record[KEYWORD_SOURCES_FIELD] = parse_keyword_sources(
+                record_data.get(KEYWORD_SOURCES_FIELD, {})
+            )
+            loaded_record[DELETED_KEYWORDS_FIELD] = parse_deleted_keywords(
+                record_data.get(DELETED_KEYWORDS_FIELD, {})
+            )
             validations[record_id] = loaded_record
         return validations
 
@@ -491,6 +770,10 @@ def load_validations() -> dict[str, dict[str, Any]]:
                 column: normalize_keyword_list_for_column(column, kept_keywords)
                 for column in KEYWORD_COLUMNS
             }
+            validations[row.record_identifier][KEYWORD_SOURCES_FIELD] = {}
+            validations[row.record_identifier][DELETED_KEYWORDS_FIELD] = {
+                column: {} for column in KEYWORD_COLUMNS
+            }
             validations[row.record_identifier]["new_keywords"] = []
             validations[row.record_identifier]["new_keyword_uris"] = []
             validations[row.record_identifier][REMARKS_COLUMN] = ""
@@ -502,6 +785,12 @@ def load_validations() -> dict[str, dict[str, Any]]:
                 )
                 for column in VALIDATION_COLUMNS
             }
+            validations[row.record_identifier][KEYWORD_SOURCES_FIELD] = parse_keyword_sources(
+                kept_keywords.get(KEYWORD_SOURCES_FIELD, {})
+            )
+            validations[row.record_identifier][DELETED_KEYWORDS_FIELD] = parse_deleted_keywords(
+                kept_keywords.get(DELETED_KEYWORDS_FIELD, {})
+            )
             validations[row.record_identifier][REMARKS_COLUMN] = str(
                 kept_keywords.get(REMARKS_COLUMN, kept_keywords.get(LEGACY_REMARKS_COLUMN, ""))
             )
@@ -631,11 +920,13 @@ def main() -> None:
     except (FileNotFoundError, ValueError) as error:
         st.error(str(error))
         st.info(
-            "The Excel source is expected at keyword_extraction_review.xlsx, on the "
-            "'result' sheet. When present, the app creates a reusable local CSV copy."
+            "The Excel source is expected at keyword_extraction_review.xlsx, with at "
+            "least one sheet starting with 'keyllm' (or the legacy 'result' sheet). "
+            "When present, the app creates a reusable local CSV copy."
         )
         return
-
+    
+    
     if records.empty:
         st.warning("The source contains no records to review.")
         return
@@ -769,9 +1060,10 @@ def main() -> None:
         default_keywords = [
             keyword for keyword in default_keywords if keyword in available_keywords
         ]
-        with st.container(border=True):
+        with st.container(border=True,):
             kept_keywords[source_column] = st.multiselect(
                 KEYWORD_LABELS[source_column],
+                label_visibility="collapsed",
                 options=available_keywords,
                 default=default_keywords,
                 key=f"keywords_{source_column}_{record_id}",
@@ -813,7 +1105,7 @@ def main() -> None:
                         )
         kept_keywords[REMARKS_COLUMN] = free_remarks
 
-    if st.button("💾 Save this review and go to the next record ⏭️", type="primary",use_container_width=True):
+    if st.button("💾 Save this review and go to the next record ⏭️", type="primary",width='stretch'):
         example_complete = not is_example_record or example_review_is_complete(kept_keywords)
         if not example_complete:
             st.error(
@@ -821,6 +1113,15 @@ def main() -> None:
                 "under Adding missing keywords from SoilVoc."
             )
         elif not is_example_record:
+            kept_keywords[KEYWORD_SOURCES_FIELD] = selected_keyword_sources_for_record(
+                record,
+                kept_keywords,
+            )
+            kept_keywords[DELETED_KEYWORDS_FIELD] = deleted_keywords_for_record(
+                record,
+                kept_keywords,
+                kept_keywords[KEYWORD_SOURCES_FIELD],
+            )
             validations[record_id] = kept_keywords
             st.session_state[SESSION_VALIDATIONS_KEY][record_id] = kept_keywords
             save_validations(validations)
