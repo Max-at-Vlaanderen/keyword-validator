@@ -626,6 +626,9 @@ def render_sidebar_download_button(
     with st.sidebar:
         st.divider()
         st.subheader("Export")
+        st.caption(
+            "The keyword matching team (Jiarong, Beichen, Paul, and Max) thanks you for your effort 🙏"
+        )
         username_input = st.text_input(
             "Username",
             value=st.session_state.get("reviewer_username", get_default_username()),
