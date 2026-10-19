@@ -294,6 +294,7 @@ dependencies = [
     { name = "pandas" },
     { name = "rdflib" },
     { name = "streamlit" },
+    { name = "streamlit-scroll-to-top" },
 ]
 
 [package.metadata]
@@ -302,6 +303,7 @@ requires-dist = [
     { name = "pandas", specifier = ">=2.2.3" },
     { name = "rdflib", specifier = ">=7.1.0" },
     { name = "streamlit", specifier = ">=1.39.0" },
+    { name = "streamlit-scroll-to-top", specifier = ">=0.0.4" },
 ]
 
 [[package]]
@@ -867,6 +869,18 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/8f/61/75c550a2d2acd79402aa1f32c8068c6cf47fa621d3995883a43caafeeadc/streamlit-1.65.0.tar.gz", hash = "sha256:42acd9ebdf3576a35584977c48a044ec0b5d3e4997fa9248809b9891598ac6a0", size = 9749831, upload-time = "2026-10-02T21:40:36.584Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/fa/e3/5c9d2e88563c9974e53ac744b1523ebb1fd8f0ebb1ecc28a5f6f6bb0baea/streamlit-1.65.0-py3-none-any.whl", hash = "sha256:517a7254e223f4986d2b2e0745d02acf8ca64656943e63e422d345ce34a7495b", size = 10313469, upload-time = "2026-10-02T21:40:33.164Z" },
+]
+
+[[package]]
+name = "streamlit-scroll-to-top"
+version = "0.0.4"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "streamlit" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/d2/06/26f13270ea77f0fddec15b11955dad1c1130897c87f6a4c3040221051ef7/streamlit_scroll_to_top-0.0.4.tar.gz", hash = "sha256:148bbaa31ca91444a94d4b1f846bcdc0de5f6b2eccaf9e815805754892a9d7f6", size = 402901, upload-time = "2024-12-12T00:40:04.916Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ce/89/9099f3c5fab4b7ecef73a16bb80a59d6501d5b8ae904df162700460d15e1/streamlit_scroll_to_top-0.0.4-py3-none-any.whl", hash = "sha256:4e894ee1377fd0d65c799c39463d382d9a72fb9c592dde566ea3f6c109154128", size = 2273951, upload-time = "2024-12-12T00:40:00.918Z" },
 ]
 
 [[package]]

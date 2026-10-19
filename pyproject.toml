@@ -9,4 +9,5 @@ dependencies = [
 	"pandas>=2.2.3",
 	"rdflib>=7.1.0",
 	"streamlit>=1.39.0",
+	"streamlit-scroll-to-top>=0.0.4",
 ]

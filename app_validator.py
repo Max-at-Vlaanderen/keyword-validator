@@ -19,7 +19,7 @@ import pandas as pd
 from rdflib import BNode, Graph, Literal, Namespace, URIRef
 from rdflib.namespace import RDF, RDFS, SKOS
 import streamlit as st
-import streamlit.components.v1 as components
+from streamlit_scroll_to_top import scroll_to_here
 
 
 APP_DIR = Path(__file__).parent
@@ -43,6 +43,7 @@ VALIDATION_COLUMNS = KEYWORD_COLUMNS + ("new_keywords", "new_keyword_uris")
 REMARKS_COLUMN = "general_remarks"
 LEGACY_REMARKS_COLUMN = "General_remarks"
 SCROLL_TO_TOP_FLAG = "scroll_to_top_on_render"
+SCROLL_TO_TOP_TOKEN = "scroll_to_top_token"
 SESSION_VALIDATIONS_KEY = "session_validations"
 NON_HUMAN_USERNAMES = {
     "appuser",
@@ -908,28 +909,20 @@ def has_unsaved_record_changes(
 def request_scroll_to_top() -> None:
     """Request a scroll-to-top action for the current or next render."""
     st.session_state[SCROLL_TO_TOP_FLAG] = True
-
-
-def render_scroll_to_top_if_requested() -> None:
-    """Run a small script to move the app viewport to the top."""
-    if st.session_state.get(SCROLL_TO_TOP_FLAG):
-        components.html(
-            """
-            <script>
-            const target = window.parent || window;
-            target.scrollTo({ top: 0, left: 0, behavior: 'auto' });
-            </script>
-            """,
-            height=0,
-        )
-        st.session_state[SCROLL_TO_TOP_FLAG] = False
+    st.session_state[SCROLL_TO_TOP_TOKEN] = st.session_state.get(SCROLL_TO_TOP_TOKEN, 0) + 1
 
 
 def main() -> None:
     st.set_page_config(page_title="Keyword experiment validator", layout="wide")
+
+    if st.session_state.get(SCROLL_TO_TOP_FLAG):
+        # Use the dedicated component's iframe focus workaround, as recommended in
+        # the Streamlit discussion thread.
+        scroll_to_here(0, key=f"scroll_to_top_{st.session_state.get(SCROLL_TO_TOP_TOKEN, 0)}")
+        st.session_state[SCROLL_TO_TOP_FLAG] = False
+
     st.title("Keyword experiment validator")
     st.caption("Review one record at a time. Remove any keyword that should not be retained.")
-    render_scroll_to_top_if_requested()
     render_admin_import()
 
     try:
@@ -1000,6 +993,7 @@ def main() -> None:
     with previous_column:
         if st.button("← Previous", disabled=position == 0):
             st.session_state.pending_next_confirmation_record_id = None
+            request_scroll_to_top()
             st.session_state.record_position -= 1
             st.rerun()
     with progress_column:
@@ -1010,6 +1004,7 @@ def main() -> None:
                 st.session_state.pending_next_confirmation_record_id = record_id
             else:
                 st.session_state.pending_next_confirmation_record_id = None
+                request_scroll_to_top()
                 st.session_state.record_position += 1
                 st.rerun()
 
@@ -1026,6 +1021,7 @@ def main() -> None:
                 with discard_column:
                     if st.button("Discard changes and continue"):
                         st.session_state.pending_next_confirmation_record_id = None
+                        request_scroll_to_top()
                         st.session_state.record_position += 1
                         st.rerun()
                 with stay_column:
@@ -1044,6 +1040,7 @@ def main() -> None:
                 with discard_column:
                     if st.button("Discard changes and continue"):
                         st.session_state.pending_next_confirmation_record_id = None
+                        request_scroll_to_top()
                         st.session_state.record_position += 1
                         st.rerun()
                 with stay_column:
@@ -1157,14 +1154,10 @@ def main() -> None:
             st.rerun()
         if example_complete and is_example_record:
             request_scroll_to_top()
-            render_scroll_to_top_if_requested()
             st.success("Example complete.")
         elif example_complete:
             request_scroll_to_top()
-            render_scroll_to_top_if_requested()
             st.success("Review saved. This is the last record.")
-
-
 
 if __name__ == "__main__":
     main()
