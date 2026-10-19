@@ -615,7 +615,10 @@ def get_default_username() -> str:
     return ""
 
 
-def render_sidebar_download_button(validations: dict[str, dict[str, Any]]) -> None:
+def render_sidebar_download_button(
+    validations: dict[str, dict[str, Any]],
+    has_unsaved_changes: bool = False,
+) -> None:
     """Provide a red download button in the sidebar with review metadata."""
     if "session_started_at" not in st.session_state:
         st.session_state.session_started_at = datetime.now().isoformat()
@@ -660,6 +663,17 @@ def render_sidebar_download_button(validations: dict[str, dict[str, Any]]) -> No
         )
         if username_missing:
             st.caption("Enter a username to enable download.")
+        elif has_unsaved_changes:
+            st.caption("Save this record first to include your latest changes in the export.")
+
+        button_disabled = username_missing or has_unsaved_changes
+        if username_missing:
+            button_help = "Add a username above to enable this download."
+        elif has_unsaved_changes:
+            button_help = "Save this record first to include all current changes."
+        else:
+            button_help = "Download the current session validations as JSON."
+
         st.download_button(
             "📁 Download validations",
             data=json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8"),
@@ -667,8 +681,8 @@ def render_sidebar_download_button(validations: dict[str, dict[str, Any]]) -> No
             mime="application/json",
             key="download_validations_button",
             type="primary",
-            disabled=username_missing,
-            help="Add a username above to enable this download.",
+            disabled=button_disabled,
+            help=button_help,
         )
 
 
@@ -936,7 +950,6 @@ def main() -> None:
     validations = load_validations()
     if SESSION_VALIDATIONS_KEY not in st.session_state:
         st.session_state[SESSION_VALIDATIONS_KEY] = {}
-    render_sidebar_download_button(st.session_state[SESSION_VALIDATIONS_KEY])
 
     record_identifiers = records["record_identifier"].tolist()
     if set(st.session_state.get("record_order", [])) != set(record_identifiers):
@@ -958,6 +971,16 @@ def main() -> None:
     record_id = record["record_identifier"]
     saved_keywords = validations.get(record_id, {})
     soilvoc_keywords = load_soilvoc_keywords()
+    has_unsaved_changes = has_unsaved_record_changes(
+        record,
+        record_id,
+        saved_keywords,
+        soilvoc_keywords,
+    )
+    render_sidebar_download_button(
+        st.session_state[SESSION_VALIDATIONS_KEY],
+        has_unsaved_changes=has_unsaved_changes,
+    )
 
     if "pending_next_confirmation_record_id" not in st.session_state:
         st.session_state.pending_next_confirmation_record_id = None
@@ -980,7 +1003,7 @@ def main() -> None:
         st.progress((position + 1) / len(records), text=f"Record {position + 1} of {len(records)}")
     with next_column:
         if st.button("Next →", disabled=next_disabled, help=next_help):
-            if has_unsaved_record_changes(record, record_id, saved_keywords, soilvoc_keywords):
+            if has_unsaved_changes:
                 st.session_state.pending_next_confirmation_record_id = record_id
             else:
                 st.session_state.pending_next_confirmation_record_id = None
@@ -998,12 +1021,12 @@ def main() -> None:
                 st.caption("💾 Save button on the bottom of the page.")
                 discard_column, stay_column = st.columns(2)
                 with discard_column:
-                    if st.button("Discard changes and continue", type="primary"):
+                    if st.button("Discard changes and continue"):
                         st.session_state.pending_next_confirmation_record_id = None
                         st.session_state.record_position += 1
                         st.rerun()
                 with stay_column:
-                    if st.button("Stay on this record"):
+                    if st.button("Stay on this record", type="primary"):
                         st.session_state.pending_next_confirmation_record_id = None
                         st.rerun()
 
@@ -1016,12 +1039,12 @@ def main() -> None:
                 )
                 discard_column, stay_column = st.columns(2)
                 with discard_column:
-                    if st.button("Discard changes and continue", type="primary"):
+                    if st.button("Discard changes and continue"):
                         st.session_state.pending_next_confirmation_record_id = None
                         st.session_state.record_position += 1
                         st.rerun()
                 with stay_column:
-                    if st.button("Stay on this record"):
+                    if st.button("Stay on this record", type="primary"):
                         st.session_state.pending_next_confirmation_record_id = None
                         st.rerun()
 
